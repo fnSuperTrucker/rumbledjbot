@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Rumble YouTube DJ Bot",
+  "version": "1.0",
+  "description": "Extracts YouTube links from Rumble chat and plays them in order.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "tabs"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["*://*.rumble.com/*"],
+      "js": ["content.js"]
+    },
+    {
+      "matches": ["*://*.youtube.com/watch*"],
+      "js": ["youtube.js"]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
