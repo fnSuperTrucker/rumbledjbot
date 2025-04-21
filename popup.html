@@ -1,41 +1,47 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>Rumble YouTube DJ</title>
-  <style>
-    body { 
-      width: 300px; 
-      padding: 10px; 
-      font-family: Arial, sans-serif; 
-    }
-    #queueList { 
-      max-height: 200px; 
-      overflow-y: auto; 
-      margin-bottom: 10px; 
-      list-style: none; 
-      padding: 0; 
-    }
-    #queueList li { 
-      margin: 5px 0; 
-      word-wrap: break-word; 
-    }
-    .button-container {
-      display: flex; 
-      gap: 5px; /* Space between buttons */
-    }
-    button { 
-      padding: 5px 10px; 
-    }
-  </style>
-</head>
-<body>
-  <h3>YouTube DJ Queue</h3>
-  <ul id="queueList"></ul>
-  <div class="button-container">
-    <button id="startBtn">Start Playback</button>
-    <button id="stopBtn">Stop Playback</button>
-    <button id="clearBtn">Clear Queue</button>
-  </div>
-  <script src="popup.js"></script>
-</body>
+  <head>
+    <title>Rumble YouTube DJ</title>
+    <style>
+      body {
+        width: 400px; /* Increased width for longer titles */
+        padding: 10px;
+        font-family: Arial, sans-serif;
+      }
+      #queueList {
+        max-height: 300px; /* Increased height */
+        overflow-y: auto;
+        margin-bottom: 10px;
+        list-style: none;
+        padding: 0;
+      }
+      #queueList li {
+        margin: 5px 0;
+        word-wrap: break-word;
+        font-size: 14px;
+      }
+      .button-container {
+        display: flex;
+        gap: 5px;
+        justify-content: space-between;
+      }
+      button {
+        flex: 1;
+        padding: 5px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>YouTube DJ Queue</h3>
+    <ul id="queueList"></ul>
+    <div class="button-container">
+      <button id="startBtn">Start</button>
+      <button id="stopBtn">Stop</button>
+      <button id="clearBtn">Clear</button>
+      <button id="skipBtn">Skip</button>
+    </div>
+    <script src="popup.js"></script>
+  </body>
 </html>

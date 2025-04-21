@@ -1,73 +1,168 @@
-document.addEventListener('DOMContentLoaded', () => {
-  const queueList = document.getElementById('queueList');
-  const startBtn = document.getElementById('startBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const clearBtn = document.getElementById('clearBtn');
+document.addEventListener("DOMContentLoaded", () => {
+  const queueList = document.getElementById("queueList");
+  const startBtn = document.getElementById("startBtn");
+  const stopBtn = document.getElementById("stopBtn");
+  const clearBtn = document.getElementById("clearBtn");
+  const skipBtn = document.getElementById("skipBtn");
 
-  updateQueue();
-  setInterval(updateQueue, 2000); // Keep updating every 2 seconds
+  let lastValidQueue = null;
 
-  startBtn.addEventListener('click', () => {
-    console.log('Start button clicked');
+  chrome.storage.local.get("popupQueueCache", (result) => {
+    if (result.popupQueueCache && Array.isArray(result.popupQueueCache.queue)) {
+      lastValidQueue = result.popupQueueCache;
+      console.log("Loaded cached queue:", lastValidQueue);
+      updateQueueDisplay(
+        lastValidQueue.queue,
+        lastValidQueue.currentIndex,
+        lastValidQueue.playedSongs
+      );
+    } else {
+      queueList.innerHTML = "<li>Loading...</li>";
+    }
+    updateQueue();
+  });
+
+  setInterval(() => updateQueue(true), 2000);
+
+  startBtn.addEventListener("click", () => {
+    console.log("Start clicked");
     chrome.runtime.sendMessage({ type: "startPlayback" }, (response) => {
-      console.log('Start playback response:', response);
-      updateQueue(); // Ensure queue updates immediately
+      console.log("Start response:", response);
+      updateQueue();
     });
   });
 
-  stopBtn.addEventListener('click', () => {
-    console.log('Stop button clicked');
+  stopBtn.addEventListener("click", () => {
+    console.log("Stop clicked");
     chrome.runtime.sendMessage({ type: "stopPlayback" }, (response) => {
-      console.log('Stop playback response:', response);
-      updateQueue(); // Ensure queue updates after stopping
+      console.log("Stop response:", response);
+      updateQueue();
     });
   });
 
-  clearBtn.addEventListener('click', () => {
-    console.log('Clear button clicked');
+  clearBtn.addEventListener("click", () => {
+    console.log("Clear clicked");
     chrome.runtime.sendMessage({ type: "clearQueue" }, (response) => {
-      console.log('Clear queue response:', response);
-      updateQueue(); // Refresh UI after clearing
+      console.log("Clear response:", response);
+      lastValidQueue = null;
+      chrome.storage.local.remove("popupQueueCache", () => {
+        console.log("Cleared cache");
+        updateQueueDisplay([], -1, []);
+      });
     });
   });
 
-  function updateQueue() {
+  skipBtn.addEventListener("click", () => {
+    console.log("Skip clicked");
+    chrome.runtime.sendMessage({ type: "skipVideo" }, (response) => {
+      console.log("Skip response:", response);
+      updateQueue();
+    });
+  });
+
+  function updateQueue(isPeriodic = false, retries = 5) {
+    if (!isPeriodic) {
+      queueList.innerHTML = "<li>Loading...</li>";
+    }
     chrome.runtime.sendMessage({ type: "getQueue" }, (response) => {
-      console.log('Popup received queue:', response);
-      if (response && response.queue) {
-        updateQueueDisplay(response.queue, response.currentIndex, response.playedSongs);
-      } else {
-        queueList.innerHTML = '<li>No songs in queue</li>'; // Fallback if queue is empty
+      if (
+        chrome.runtime.lastError ||
+        !response ||
+        !Array.isArray(response.queue)
+      ) {
+        console.error(
+          "Fetch error:",
+          chrome.runtime.lastError?.message,
+          response
+        );
+        if (retries > 0) {
+          console.log(`Retrying (${retries} left)`);
+          setTimeout(() => updateQueue(isPeriodic, retries - 1), 1000);
+        } else if (lastValidQueue) {
+          console.log("Using cache:", lastValidQueue);
+          updateQueueDisplay(
+            lastValidQueue.queue,
+            lastValidQueue.currentIndex,
+            lastValidQueue.playedSongs
+          );
+        } else {
+          console.log("No cache, empty queue");
+          queueList.innerHTML = "<li>No songs in queue</li>";
+        }
+        return;
       }
+      console.log("Fetched queue:", response);
+      lastValidQueue = {
+        queue: response.queue,
+        currentIndex: Number.isInteger(response.currentIndex)
+          ? response.currentIndex
+          : -1,
+        playedSongs: Array.isArray(response.playedSongs)
+          ? response.playedSongs
+          : [],
+      };
+      chrome.storage.local.set({ popupQueueCache: lastValidQueue }, () => {
+        console.log("Saved cache:", lastValidQueue);
+      });
+      updateQueueDisplay(
+        lastValidQueue.queue,
+        lastValidQueue.currentIndex,
+        lastValidQueue.playedSongs
+      );
     });
   }
 
   function updateQueueDisplay(queue, currentIndex, playedSongs) {
-    queueList.innerHTML = '';
-    if (queue.length === 0) {
-      queueList.innerHTML = '<li>No songs in queue</li>';
+    queueList.innerHTML = "";
+    if (!Array.isArray(queue) || queue.length === 0) {
+      queueList.innerHTML = "<li>No songs in queue</li>";
       return;
     }
-    queue.forEach((url, index) => {
-      const li = document.createElement('li');
-      const displayText = url.length > 50 ? url.substring(0, 47) + '...' : url;
+    queue.forEach((item, index) => {
+      const li = document.createElement("li");
+      const displayText =
+        item.title ||
+        (item.url.length > 50 ? item.url.substring(0, 47) + "..." : item.url);
       li.textContent = displayText;
+      if (item.duration) {
+        li.textContent += ` (${formatDuration(item.duration)})`;
+      }
 
       if (index === currentIndex) {
-        li.style.color = 'black';
-        li.style.fontWeight = 'bold';
-        li.textContent += ' (Playing)';
-      } else if (playedSongs.includes(url)) {
-        li.style.color = '#888888';
-        li.style.textDecoration = 'line-through';
-        li.textContent += ' (Played)';
+        li.style.color = "black";
+        li.style.fontWeight = "bold";
+        li.textContent += " (Playing)";
+      } else if (playedSongs.includes(item.url)) {
+        li.style.color = "#888888";
+        li.style.textDecoration = "line-through";
+        li.textContent += " (Played)";
       } else {
-        li.style.color = 'blue';
-        li.style.textDecoration = 'underline';
+        li.style.color = "blue";
+        li.style.textDecoration = "underline";
       }
 
       queueList.appendChild(li);
     });
-    console.log('Queue displayed:', queue, 'Current index:', currentIndex, 'Played songs:', playedSongs);
+    console.log(
+      "Displayed:",
+      queue,
+      "Index:",
+      currentIndex,
+      "Played:",
+      playedSongs
+    );
+  }
+
+  function formatDuration(seconds) {
+    if (!seconds || isNaN(seconds)) return "Unknown";
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${secs
+        .toString()
+        .padStart(2, "0")}`;
+    }
+    return `${minutes}:${secs.toString().padStart(2, "0")}`;
   }
 });
