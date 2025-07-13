@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <meta charset="UTF-8">
     <title>Rumble YouTube DJ</title>
     <style>
       body {
@@ -24,6 +25,7 @@
         display: flex;
         gap: 5px;
         justify-content: space-between;
+        flex-wrap: wrap;
       }
       button {
         flex: 1;
@@ -36,11 +38,17 @@
   <body>
     <h3>YouTube DJ Queue</h3>
     <ul id="queueList"></ul>
+    <div style="margin-bottom:10px;">
+      <input id="addUrlInput" type="text" placeholder="YouTube URL" style="width:220px;">
+      <button id="addUrlBtn">Add</button>
+    </div>
     <div class="button-container">
       <button id="startBtn">Start</button>
       <button id="stopBtn">Stop</button>
       <button id="clearBtn">Clear</button>
       <button id="skipBtn">Skip</button>
+      <button id="saveBtn">Save Playlist</button>
+      <button id="loadBtn">Load Playlist</button>
     </div>
     <script src="popup.js"></script>
   </body>

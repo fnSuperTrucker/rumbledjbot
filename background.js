@@ -6,6 +6,7 @@ let isPaused = true;
 let isStateLoaded = false;
 let pendingMessages = [];
 let isPlayingNext = false;
+let queue = [];
 
 function loadState() {
   return new Promise((resolve, reject) => {
@@ -109,9 +110,6 @@ function handleMessage(message, sender, sendResponse) {
     }
     console.log("Queue:", videoQueue);
     saveState();
-    if (videoQueue.length > 0 && !isPaused && currentIndex === -1) {
-      playNextUnplayed();
-    }
     sendResponse({ status: "links added" });
   } else if (message.type === "getQueue") {
     console.log("Queue requested:", videoQueue);
@@ -227,7 +225,116 @@ function handleMessage(message, sender, sendResponse) {
       }
     }
     sendResponse({ status: "video info processed" });
+  } else if (message.type === "savePlaylist") {
+    console.log("Saving playlist");
+    const playlist = Array.isArray(videoQueue)
+      ? videoQueue.map((item) => ({
+          url: item.url,
+          title: item.title || null,
+          duration: item.duration || null,
+        }))
+      : [];
+    sendResponse({ status: "playlist saved", playlist });
+  } else if (message.type === "loadPlaylist") {
+    console.log("Loading playlist:", message.playlist);
+    if (Array.isArray(message.playlist)) {
+      videoQueue = message.playlist.map((item) => ({
+        url: item.url || "",
+        title: item.title || null,
+        duration: item.duration || null,
+      }));
+      playedSongs.clear();
+      currentIndex = -1;
+      isPaused = true;
+      if (currentTabId) {
+        chrome.tabs.remove(currentTabId, () => {
+          if (chrome.runtime.lastError) {
+            console.log("Tab close error:", chrome.runtime.lastError.message);
+          }
+        });
+        currentTabId = null;
+      }
+      saveState();
+      sendResponse({ status: "playlist loaded" });
+    } else {
+      sendResponse({ status: "invalid playlist" });
+    }
+  } else if (message.type === "addToQueue") {
+    if (
+      typeof message.url === "string" &&
+      !videoQueue.some((item) => item.url === message.url)
+    ) {
+      videoQueue.push({ url: message.url, title: null, duration: null });
+      saveState();
+      broadcastQueueUpdate();
+      sendResponse({ status: "added", queue: videoQueue });
+    } else {
+      sendResponse({ status: "duplicate or invalid", queue: videoQueue });
+    }
+  } else if (message.type === "removeFromQueue") {
+    if (message.index >= 0 && message.index < videoQueue.length) {
+      videoQueue.splice(message.index, 1);
+      // Adjust currentIndex if needed
+      if (currentIndex > message.index) currentIndex--;
+      if (currentIndex >= videoQueue.length) currentIndex = videoQueue.length - 1;
+      saveState();
+      broadcastQueueUpdate();
+      sendResponse({ status: "removed", queue: videoQueue });
+    } else {
+      sendResponse({ status: "invalid index", queue: videoQueue });
+    }
+  } else if (message.type === "moveInQueue") {
+    const { from, to } = message;
+    if (
+      from >= 0 &&
+      to >= 0 &&
+      from < videoQueue.length &&
+      to < videoQueue.length
+    ) {
+      // Track the currently playing song's URL
+      const currentUrl = (currentIndex >= 0 && currentIndex < videoQueue.length)
+        ? videoQueue[currentIndex].url
+        : null;
+
+      const [moved] = videoQueue.splice(from, 1);
+      videoQueue.splice(to, 0, moved);
+
+      // Update currentIndex to point to the same song (by URL)
+      if (currentUrl) {
+        currentIndex = videoQueue.findIndex(item => item.url === currentUrl);
+      }
+
+      recalculatePlayedSongs();
+      saveState();
+      broadcastQueueUpdate();
+      sendResponse({ status: "ok" });
+    } else {
+      sendResponse({ status: "invalid indices" });
+    }
+    return true;
+  } else if (message.type === "getQueue") {
+    sendResponse({
+      queue: Array.isArray(videoQueue) ? videoQueue : [],
+      currentIndex,
+      playedSongs: Array.from(playedSongs),
+    });
   }
+  // ...handle other message types...
+  return true;
+}
+
+function broadcastQueueUpdate() {
+  // Send updated queue to all tabs with the content script
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs) {
+      chrome.tabs.sendMessage(tab.id, {
+        type: "showPlaylist",
+        queue: videoQueue,
+        currentIndex,
+        playedSongs: Array.from(playedSongs),
+      });
+    }
+  });
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -520,5 +627,12 @@ function sendPlaylistWithRetry(
         console.log("Playlist sent:", tabId, response);
       }
     }
+  );
+}
+
+function recalculatePlayedSongs() {
+  // Only mark songs above currentIndex as played
+  playedSongs = new Set(
+    videoQueue.slice(0, currentIndex).map(item => item.url)
   );
 }

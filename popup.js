@@ -4,6 +4,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const stopBtn = document.getElementById("stopBtn");
   const clearBtn = document.getElementById("clearBtn");
   const skipBtn = document.getElementById("skipBtn");
+  const saveBtn = document.getElementById("saveBtn");
+  const loadBtn = document.getElementById("loadBtn");
+  const addUrlInput = document.getElementById("addUrlInput");
+  const addUrlBtn = document.getElementById("addUrlBtn");
 
   let lastValidQueue = null;
 
@@ -58,6 +62,74 @@ document.addEventListener("DOMContentLoaded", () => {
       console.log("Skip response:", response);
       updateQueue();
     });
+  });
+
+  saveBtn.addEventListener("click", () => {
+    console.log("Save playlist clicked");
+    chrome.runtime.sendMessage({ type: "savePlaylist" }, (response) => {
+      if (response && response.status === "playlist saved") {
+        console.log("Playlist saved:", response.playlist);
+        const blob = new Blob([JSON.stringify(response.playlist, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "youtube_dj_playlist.json";
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        console.error("Failed to save playlist:", response);
+      }
+    });
+  });
+
+  loadBtn.addEventListener("click", () => {
+    console.log("Load playlist clicked");
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = (event) => {
+      const file = event.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const playlist = JSON.parse(e.target.result);
+            if (Array.isArray(playlist)) {
+              chrome.runtime.sendMessage(
+                { type: "loadPlaylist", playlist },
+                (response) => {
+                  console.log("Load playlist response:", response);
+                  updateQueue();
+                }
+              );
+            } else {
+              console.error("Invalid playlist format");
+            }
+          } catch (error) {
+            console.error("Error parsing playlist:", error);
+          }
+        };
+        reader.readAsText(file);
+      }
+    };
+    input.click();
+  });
+
+  addUrlBtn.addEventListener("click", () => {
+    const url = addUrlInput.value.trim();
+    if (!url) return;
+    chrome.runtime.sendMessage({ type: "newLinks", links: [url] }, (response) => {
+      addUrlInput.value = "";
+      updateQueue();
+    });
+  });
+
+  addUrlInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      addUrlBtn.click();
+    }
   });
 
   function updateQueue(isPeriodic = false, retries = 5) {
@@ -123,22 +195,71 @@ document.addEventListener("DOMContentLoaded", () => {
       const displayText =
         item.title ||
         (item.url.length > 50 ? item.url.substring(0, 47) + "..." : item.url);
-      li.textContent = displayText;
+
+      // Use a span for the text so buttons are not overwritten
+      const textSpan = document.createElement("span");
+      textSpan.textContent = displayText;
       if (item.duration) {
-        li.textContent += ` (${formatDuration(item.duration)})`;
+        textSpan.textContent += ` (${formatDuration(item.duration)})`;
+      }
+      if (index === currentIndex) {
+        textSpan.style.color = "black";
+        textSpan.style.fontWeight = "bold";
+        textSpan.textContent += " (Playing)";
+      } else if (playedSongs.includes(item.url)) {
+        textSpan.style.color = "#888888";
+        textSpan.style.textDecoration = "line-through";
+        textSpan.textContent += " (Played)";
+      } else {
+        textSpan.style.color = "blue";
+        textSpan.style.textDecoration = "underline";
+      }
+      li.appendChild(textSpan);
+
+      // Remove button
+      const removeBtn = document.createElement("button");
+      removeBtn.textContent = "Remove";
+      removeBtn.title = "Remove";
+      removeBtn.style.marginLeft = "8px";
+      removeBtn.onclick = () => {
+        chrome.runtime.sendMessage({ type: "removeFromQueue", index }, () => {
+          updateQueue();
+        });
+      };
+      li.appendChild(removeBtn);
+
+      // Move up button
+      if (index > 0) {
+        const upBtn = document.createElement("button");
+        upBtn.textContent = "▲"; // Changed from "↑"
+        upBtn.title = "Move Up";
+        upBtn.style.marginLeft = "4px";
+        upBtn.onclick = () => {
+          chrome.runtime.sendMessage(
+            { type: "moveInQueue", from: index, to: index - 1 },
+            () => {
+              updateQueue();
+            }
+          );
+        };
+        li.appendChild(upBtn);
       }
 
-      if (index === currentIndex) {
-        li.style.color = "black";
-        li.style.fontWeight = "bold";
-        li.textContent += " (Playing)";
-      } else if (playedSongs.includes(item.url)) {
-        li.style.color = "#888888";
-        li.style.textDecoration = "line-through";
-        li.textContent += " (Played)";
-      } else {
-        li.style.color = "blue";
-        li.style.textDecoration = "underline";
+      // Move down button
+      if (index < queue.length - 1) {
+        const downBtn = document.createElement("button");
+        downBtn.textContent = "▼"; // Changed from "↓"
+        downBtn.title = "Move Down";
+        downBtn.style.marginLeft = "4px";
+        downBtn.onclick = () => {
+          chrome.runtime.sendMessage(
+            { type: "moveInQueue", from: index, to: index + 1 },
+            () => {
+              updateQueue();
+            }
+          );
+        };
+        li.appendChild(downBtn);
       }
 
       queueList.appendChild(li);
@@ -164,5 +285,31 @@ document.addEventListener("DOMContentLoaded", () => {
         .padStart(2, "0")}`;
     }
     return `${minutes}:${secs.toString().padStart(2, "0")}`;
+  }
+
+  // Check and play the next unplayed video if applicable
+  function checkAndPlayNext() {
+    chrome.runtime.sendMessage({ type: "getQueue" }, (response) => {
+      if (chrome.runtime.lastError || !response || !Array.isArray(response.queue)) {
+        console.error("Error fetching queue:", chrome.runtime.lastError);
+        return;
+      }
+      const { queue: videoQueue, currentIndex, isPaused } = response;
+      if (videoQueue.length > 0 && !isPaused && currentIndex === -1) {
+        playNextUnplayed();
+      }
+    });
+  }
+
+  // Play the next unplayed video in the queue
+  function playNextUnplayed() {
+    chrome.runtime.sendMessage({ type: "playNextUnplayed" }, (response) => {
+      if (chrome.runtime.lastError || !response || response.status !== "success") {
+        console.error("Error playing next unplayed video:", chrome.runtime.lastError);
+      } else {
+        console.log("Playing next unplayed video:", response.video);
+        updateQueue();
+      }
+    });
   }
 });

@@ -48,7 +48,7 @@ function attachVideoListeners(video) {
     const remainingTime = video.duration - video.currentTime;
     if (
       remainingTime < 0.5 &&
-      remainingTime > 0 &&
+      remainingSinceTime > 0 && // <-- ERROR: remainingSinceTime is not defined
       lastCurrentTime !== video.currentTime
     ) {
       hasEnded = true;
@@ -85,9 +85,7 @@ window.addEventListener("load", () => {
 
 function showPlaylistOverlay(queue, currentIndex, playedSongs) {
   const existingOverlay = document.getElementById("dj-playlist-overlay");
-  if (existingOverlay) {
-    existingOverlay.remove();
-  }
+  if (existingOverlay) existingOverlay.remove();
 
   const overlay = document.createElement("div");
   overlay.id = "dj-playlist-overlay";
@@ -95,7 +93,7 @@ function showPlaylistOverlay(queue, currentIndex, playedSongs) {
   overlay.style.top = "20px";
   overlay.style.right = "20px";
   overlay.style.maxWidth = "400px";
-  overlay.style.maxHeight = "80vh";
+  overlay.style.maxHeight = "calc(80vh - 200px)"; // Reduced by 200 pixels
   overlay.style.overflowY = "auto";
   overlay.style.backgroundColor = "rgba(0, 0, 0, 0.85)";
   overlay.style.color = "white";
@@ -119,50 +117,112 @@ function showPlaylistOverlay(queue, currentIndex, playedSongs) {
   ul.style.padding = "0";
   ul.style.margin = "0";
 
-  if (queue.length === 0) {
+  queue.forEach((item, index) => {
     const li = document.createElement("li");
-    li.textContent = "No songs in queue";
-    li.style.color = "#cccccc";
+    li.style.display = "flex";
+    li.style.alignItems = "center";
+    li.style.margin = "8px 0";
     li.style.fontSize = "18px";
+
+    // Song title
+    const displayText =
+      item.title ||
+      (item.url.length > 50 ? item.url.substring(0, 47) + "..." : item.url);
+    const span = document.createElement("span");
+    span.textContent =
+      displayText + (item.duration ? ` (${formatDuration(item.duration)})` : "");
+    if (index === currentIndex) {
+      span.style.color = "white";
+      span.style.fontWeight = "bold";
+      span.textContent += " (Playing)";
+      li.id = "current-song";
+    } else if (playedSongs.includes(item.url)) {
+      span.style.color = "#888";
+      span.style.textDecoration = "line-through";
+      span.textContent += " (Played)";
+    } else {
+      span.style.color = "#1e90ff";
+    }
+    li.appendChild(span);
+
+    // REMOVE or COMMENT OUT these blocks:
+    // Remove button
+    // const removeBtn = document.createElement("button");
+    // removeBtn.textContent = "❌";
+    // removeBtn.title = "Remove";
+    // removeBtn.style.marginLeft = "8px";
+    // removeBtn.onclick = () => {
+    //   chrome.runtime.sendMessage({ type: "removeFromQueue", index });
+    // };
+    // li.appendChild(removeBtn);
+
+    // Move up button
+    // if (index > 0) {
+    //   const upBtn = document.createElement("button");
+    //   upBtn.textContent = "⬆️";
+    //   upBtn.title = "Move Up";
+    //   upBtn.style.marginLeft = "4px";
+    //   upBtn.onclick = () => {
+    //     chrome.runtime.sendMessage({
+    //       type: "moveInQueue",
+    //       from: index,
+    //       to: index - 1,
+    //     });
+    //   };
+    //   li.appendChild(upBtn);
+    // }
+
+    // Move down button
+    // if (index < queue.length - 1) {
+    //   const downBtn = document.createElement("button");
+    //   downBtn.textContent = "⬇️";
+    //   downBtn.title = "Move Down";
+    //   downBtn.style.marginLeft = "4px";
+    //   downBtn.onclick = () => {
+    //     chrome.runtime.sendMessage({
+    //       type: "moveInQueue",
+    //       from: index,
+    //       to: index + 1,
+    //     });
+    //   };
+    //   li.appendChild(downBtn);
+    // }
+
     ul.appendChild(li);
-  } else {
-    queue.forEach((item, index) => {
-      const li = document.createElement("li");
-      const displayText =
-        item.title ||
-        (item.url.length > 50 ? item.url.substring(0, 47) + "..." : item.url);
-      li.textContent = displayText;
-      if (item.duration) {
-        li.textContent += ` (${formatDuration(item.duration)})`;
-      }
-      li.style.margin = "8px 0";
-      li.style.wordWrap = "break-word";
-      li.style.fontSize = "18px";
+  });
 
-      if (index === currentIndex) {
-        li.style.color = "white";
-        li.style.fontWeight = "bold";
-        li.textContent += " (Playing)";
-      } else if (playedSongs.includes(item.url)) {
-        li.style.color = "#888888";
-        li.style.textDecoration = "line-through";
-        li.textContent += " (Played)";
-      } else {
-        li.style.color = "#lush green";
-      }
-
-      ul.appendChild(li);
-    });
-  }
-
+  // Add song input
+  const addDiv = document.createElement("div");
+  addDiv.style.marginTop = "12px";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "YouTube URL";
+  input.style.width = "220px";
+  addDiv.appendChild(input);
+  const addBtn = document.createElement("button");
+  addBtn.textContent = "Add";
+  addBtn.onclick = () => {
+    if (input.value.trim()) {
+      chrome.runtime.sendMessage({ type: "addToQueue", url: input.value.trim() });
+      input.value = "";
+    }
+  };
+  addDiv.appendChild(addBtn);
   overlay.appendChild(ul);
+  overlay.appendChild(addDiv);
+
   document.body.appendChild(overlay);
 
+  // Center the current song in the scroll
+  if (currentIndex >= 0) {
+    const currentSong = document.getElementById("current-song");
+    if (currentSong) {
+      currentSong.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }
   setTimeout(() => {
     overlay.style.opacity = "0";
-    setTimeout(() => {
-      overlay.remove();
-    }, 1000);
+    setTimeout(() => overlay.remove(), 1000);
   }, 8000);
 }
 
